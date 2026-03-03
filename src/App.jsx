@@ -16,37 +16,52 @@ import {
   Unlock,
   X,
   Check,
-  Bell
+  Bell,
+  Sun,
+  Moon
 } from 'lucide-react';
 
 /**
- * --- CONFIGURATION ---
+ * --- KONFIGURASI DATABASE ---
  */
 const supabaseUrl = "https://mqtjbesctzixdnwnqctt.supabase.co";
 const supabaseKey = "sb_publishable_y9VJKwDA_FKBCK9W84b9rg_FAZW3JrM";
-
-// SILAKAN GANTI PASSWORD ADMIN DI SINI
-const ADMIN_PASSWORD = "cgprintkarawang";
+const ADMIN_PASSWORD = "cg";
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('input');
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  // Admin State
+  // State Admin & Notifikasi
   const [isAdmin, setIsAdmin] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [passInput, setPassInput] = useState("");
   const [loginError, setLoginError] = useState("");
-
-  // Notification State
   const [notification, setNotification] = useState({ show: false, message: '', type: 'info' });
-
-  // Edit State
   const [editingJob, setEditingJob] = useState(null);
 
-  // Form State
+  // --- STATE DARK MODE ---
+  const [isDark, setIsDark] = useState(() => {
+    // Cek apakah sebelumnya user milih dark mode (disimpan di browser)
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('theme') === 'dark';
+    }
+    return false;
+  });
+
+  // Efek untuk mengganti class di body HTML saat Dark Mode di-klik
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDark]);
+
+  // State Form Input
   const [formData, setFormData] = useState({
     tanggal: new Date().toISOString().split('T')[0],
     operator: '',
@@ -58,48 +73,38 @@ const App = () => {
     durasi_menit: 10
   });
 
-  // --- HELPER: SHOW NOTIFICATION ---
   const notify = (message, type = 'info') => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification({ show: false, message: '', type: 'info' }), 3000);
   };
 
-  // --- LOGIC: TIERING HARGA ---
   useEffect(() => {
     const qty = parseInt(formData.jumlah_unit) || 0;
     let price = 50000;
     if (qty >= 10 && qty <= 50) price = 35000;
     else if (qty > 50) price = 25000;
-
     setFormData(prev => ({ ...prev, harga_per_unit: price }));
   }, [formData.jumlah_unit]);
 
-  // --- DATA FETCHING (REST API) ---
   const fetchJobs = async () => {
     if (!supabaseUrl || !supabaseKey) return;
     setLoading(true);
     try {
       const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?select=*&order=tanggal.desc`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
-      if (!response.ok) throw new Error('Gagal mengambil data dari Supabase');
+      if (!response.ok) throw new Error('Gagal mengambil data dari server');
       const data = await response.json();
       setJobs(data);
     } catch (err) {
-      setError(err.message);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchJobs();
-  }, [supabaseUrl, supabaseKey]);
+  useEffect(() => { fetchJobs(); }, []);
 
-  // --- ACTIONS ---
   const handleAdminLogin = (e) => {
     e.preventDefault();
     if (passInput === ADMIN_PASSWORD) {
@@ -109,26 +114,19 @@ const App = () => {
       setLoginError("");
       notify("Berhasil masuk sebagai Admin", "success");
     } else {
-      setLoginError("Password salah! Silakan coba lagi.");
+      setLoginError("Password salah!");
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!supabaseUrl || !supabaseKey) return;
-
     const total = formData.jumlah_unit * formData.harga_per_unit;
     const payload = { ...formData, total_penghasilan: total };
 
     try {
       const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs`, {
         method: 'POST',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
-        },
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error('Gagal menyimpan data');
@@ -146,17 +144,12 @@ const App = () => {
 
     const total = editingJob.jumlah_unit * editingJob.harga_per_unit;
     const payload = { ...editingJob, total_penghasilan: total };
-    delete payload.id;
-    delete payload.created_at;
+    delete payload.id; delete payload.created_at;
 
     try {
       const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?id=eq.${editingJob.id}`, {
         method: 'PATCH',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       if (!response.ok) throw new Error('Gagal update data');
@@ -170,13 +163,11 @@ const App = () => {
 
   const deleteJob = async (id) => {
     if (!isAdmin) return;
+    if (!window.confirm('Hapus permanen data ini?')) return;
     try {
       const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?id=eq.${id}`, {
         method: 'DELETE',
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
-        }
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
       });
       if (!response.ok) throw new Error('Gagal menghapus data');
       notify('Data dihapus', 'success');
@@ -188,9 +179,7 @@ const App = () => {
 
   const exportCSV = () => {
     const headers = ["Tanggal", "Operator", "Invoice", "Customer", "Deskripsi", "Unit", "Harga/Unit", "Durasi(m)", "Total"];
-    const rows = jobs.map(j => [
-      j.tanggal, j.operator, j.invoice_code, j.customer, j.deskripsi, j.jumlah_unit, j.harga_per_unit, j.durasi_menit, j.total_penghasilan
-    ]);
+    const rows = jobs.map(j => [j.tanggal, j.operator, j.invoice_code, j.customer, j.deskripsi, j.jumlah_unit, j.harga_per_unit, j.durasi_menit, j.total_penghasilan]);
     let csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -202,224 +191,206 @@ const App = () => {
     notify('Data siap diunduh!', 'success');
   };
 
-  // --- STATS CALCULATION (FIXED LOGIC) ---
   const stats = {
     income: jobs.reduce((acc, curr) => acc + (curr.total_penghasilan || 0), 0),
     units: jobs.reduce((acc, curr) => acc + (parseInt(curr.jumlah_unit) || 0), 0),
-    // Runtime dihitung dari (Jumlah Pcs x Durasi per Pcs)
-    duration: jobs.reduce((acc, curr) => {
-      const qty = parseInt(curr.jumlah_unit) || 0;
-      const timePerUnit = parseInt(curr.durasi_menit) || 0;
-      return acc + (qty * timePerUnit);
-    }, 0)
+    duration: jobs.reduce((acc, curr) => acc + ((parseInt(curr.jumlah_unit) || 0) * (parseInt(curr.durasi_menit) || 0)), 0)
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8 pb-20">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans p-4 md:p-8 pb-20 transition-colors duration-300">
 
-      {/* Toast Notification */}
+      {/* Toast Notifikasi */}
       {notification.show && (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl animate-bounce ${notification.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
-          <Bell size={20} />
-          <span className="font-bold text-sm">{notification.message}</span>
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 animate-bounce`}>
+          <Bell size={20} className={isDark ? "text-yellow-600" : "text-yellow-400"} />
+          <span className="font-bold text-sm tracking-wide">{notification.message}</span>
         </div>
       )}
 
-      {/* Header Section */}
+      {/* Bagian Header */}
       <div className="max-w-6xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
-            <span className="bg-yellow-400 p-2.5 rounded-2xl text-white shadow-lg shadow-yellow-200">⚡</span>
-            CG Digital Print
+          <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3 transition-colors duration-300">
+            <span className="bg-yellow-400 dark:bg-yellow-500 p-2.5 rounded-2xl text-white dark:text-slate-900 shadow-lg shadow-yellow-200 dark:shadow-none">⚡</span>
+            CG
           </h1>
-          <p className="text-slate-500 mt-2 font-medium">Monitoring Fiber Laser — Karawang Warehouse</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium transition-colors">Monitoring Fiber Laser</p>
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Tombol Toggle Dark Mode */}
           <button
-            onClick={() => isAdmin ? setIsAdmin(false) : setShowLoginModal(true)}
-            className={`p-3 rounded-2xl flex items-center gap-2 font-bold transition-all shadow-sm border ${isAdmin ? 'bg-red-50 text-red-600 border-red-100' : 'bg-white text-slate-400 border-slate-200'}`}
+            onClick={() => setIsDark(!isDark)}
+            className="p-3 rounded-2xl flex items-center justify-center font-bold transition-all shadow-sm border bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
+            title="Toggle Tema"
           >
-            {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
-            <span className="text-xs uppercase tracking-tighter">{isAdmin ? "Admin Mode Active" : "Lock"}</span>
+            {isDark ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
           </button>
 
-          <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-slate-200">
+          <button
+            onClick={() => isAdmin ? setIsAdmin(false) : setShowLoginModal(true)}
+            className={`p-3 rounded-2xl flex items-center gap-2 font-bold transition-all shadow-sm border ${isAdmin ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/50' : 'bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+          >
+            {isAdmin ? <Unlock size={20} /> : <Lock size={20} />}
+            <span className="text-xs uppercase tracking-tighter font-black hidden sm:block">{isAdmin ? "Admin Active" : "Locked"}</span>
+          </button>
+
+          <div className="flex bg-white dark:bg-slate-800 p-1.5 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 transition-colors">
             <button
               onClick={() => setActiveTab('input')}
-              className={`px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold transition-all ${activeTab === 'input' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold transition-all ${activeTab === 'input' ? 'bg-slate-800 dark:bg-slate-700 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
-              <PlusCircle size={18} /> Input
+              <PlusCircle size={18} /> <span className="hidden sm:block">Input</span>
             </button>
             <button
               onClick={() => { setActiveTab('report'); fetchJobs(); }}
-              className={`px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold transition-all ${activeTab === 'report' ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}
+              className={`px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold transition-all ${activeTab === 'report' ? 'bg-slate-800 dark:bg-slate-700 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
-              <History size={18} /> Riwayat
+              <History size={18} /> <span className="hidden sm:block">Riwayat</span>
             </button>
           </div>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto">
-        {/* Stats Section */}
+        {/* Widget Ringkasan */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-            <div className="p-4 bg-emerald-50 rounded-2xl text-emerald-600"><DollarSign size={28} /></div>
+          <div className="bg-white dark:bg-slate-900 p-7 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:shadow-md transition-all">
+            <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-emerald-600 dark:text-emerald-400"><DollarSign size={28} /></div>
             <div>
-              <p className="text-xs text-slate-400 font-black uppercase tracking-widest mb-1">Total Pemasukan</p>
-              <p className="text-2xl font-black text-slate-800">Rp {stats.income.toLocaleString()}</p>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Total Pemasukan</p>
+              <p className="text-2xl font-black text-slate-800 dark:text-white">Rp {stats.income.toLocaleString()}</p>
             </div>
           </div>
-          <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-            <div className="p-4 bg-blue-50 rounded-2xl text-blue-600"><Package size={28} /></div>
+          <div className="bg-white dark:bg-slate-900 p-7 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:shadow-md transition-all">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/30 rounded-2xl text-blue-600 dark:text-blue-400"><Package size={28} /></div>
             <div>
-              <p className="text-xs text-slate-400 font-black uppercase tracking-widest mb-1">Unit Terproduksi</p>
-              <p className="text-2xl font-black text-slate-800">{stats.units.toLocaleString()} <span className="text-sm font-normal text-slate-400">Pcs</span></p>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Unit Terproduksi</p>
+              <p className="text-2xl font-black text-slate-800 dark:text-white">{stats.units.toLocaleString()} <span className="text-sm font-normal text-slate-400">Pcs</span></p>
             </div>
           </div>
-          <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-5">
-            <div className="p-4 bg-purple-50 rounded-2xl text-purple-600"><Clock size={28} /></div>
+          <div className="bg-white dark:bg-slate-900 p-7 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:shadow-md transition-all">
+            <div className="p-4 bg-purple-50 dark:bg-purple-900/30 rounded-2xl text-purple-600 dark:text-purple-400"><Clock size={28} /></div>
             <div>
-              <p className="text-xs text-slate-400 font-black uppercase tracking-widest mb-1">Runtime Mesin (Total)</p>
-              <p className="text-2xl font-black text-slate-800">{stats.duration.toLocaleString()} <span className="text-sm font-normal text-slate-400">m</span></p>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Runtime Mesin Total</p>
+              <p className="text-2xl font-black text-slate-800 dark:text-white">{stats.duration.toLocaleString()} <span className="text-sm font-normal text-slate-400">m</span></p>
             </div>
           </div>
         </div>
 
-        {/* Tab Content */}
+        {/* Konten Utama */}
         {activeTab === 'input' ? (
-          <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-            <div className="p-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
-              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">📝 Catat Antrian Baru</h2>
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden relative transition-colors">
+            <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400 dark:bg-yellow-500"></div>
+            <div className="p-8 border-b border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-800/20 flex justify-between items-center mt-2">
+              <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">📝 Input Job Antrian</h2>
               <div className="flex gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-200"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-200"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-200 dark:bg-slate-700"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-slate-200 dark:bg-slate-700"></span>
+                <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 dark:bg-yellow-500"></span>
               </div>
             </div>
             <form onSubmit={handleSubmit} className="p-10 grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-8">
               <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Tanggal Produksi</label>
-                  <input type="date" value={formData.tanggal} onChange={e => setFormData({ ...formData, tanggal: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-700" />
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Tanggal Produksi</label>
+                  <input type="date" value={formData.tanggal} onChange={e => setFormData({ ...formData, tanggal: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-700 dark:text-slate-200 color-scheme-light dark:color-scheme-dark" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nama Operator</label>
-                  <div className="relative">
-                    <User size={18} className="absolute left-4 top-4.5 text-slate-300" />
-                    <input type="text" required placeholder="Nama Staff" value={formData.operator} onChange={e => setFormData({ ...formData, operator: e.target.value })} className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all" />
-                  </div>
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Nama Operator</label>
+                  <input type="text" required placeholder="Contoh: Budi" value={formData.operator} onChange={e => setFormData({ ...formData, operator: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Invoice Code</label>
-                  <div className="relative">
-                    <Hash size={18} className="absolute left-4 top-4.5 text-slate-300" />
-                    <input type="text" placeholder="INV/CG/..." value={formData.invoice_code} onChange={e => setFormData({ ...formData, invoice_code: e.target.value })} className="w-full pl-12 p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all" />
-                  </div>
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Invoice Code</label>
+                  <input type="text" placeholder="INV/CG/..." value={formData.invoice_code} onChange={e => setFormData({ ...formData, invoice_code: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Nama Pelanggan</label>
-                  <input type="text" placeholder="PT / Individu" value={formData.customer} onChange={e => setFormData({ ...formData, customer: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all" />
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Nama Customer</label>
+                  <input type="text" placeholder="Nama PT / Individu" value={formData.customer} onChange={e => setFormData({ ...formData, customer: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
                 </div>
               </div>
               <div className="space-y-6">
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Deskripsi Barang & Marking</label>
-                  <input type="text" placeholder="Detail Pekerjaan" value={formData.deskripsi} onChange={e => setFormData({ ...formData, deskripsi: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all" />
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Deskripsi Kerja</label>
+                  <input type="text" placeholder="Contoh: Grafir Lensa Kacamata" value={formData.deskripsi} onChange={e => setFormData({ ...formData, deskripsi: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
                 </div>
                 <div className="grid grid-cols-2 gap-6">
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Volume (Pcs)</label>
-                    <input type="number" min="1" value={formData.jumlah_unit} onChange={e => setFormData({ ...formData, jumlah_unit: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold" />
+                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Volume (Pcs)</label>
+                    <input type="number" min="1" value={formData.jumlah_unit} onChange={e => setFormData({ ...formData, jumlah_unit: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-900 dark:text-slate-100" />
                   </div>
                   <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Durasi per Pcs (Menit)</label>
-                    <input type="number" min="0" value={formData.durasi_menit} onChange={e => setFormData({ ...formData, durasi_menit: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold" />
+                    <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Durasi/Pcs (m)</label>
+                    <input type="number" min="0" value={formData.durasi_menit} onChange={e => setFormData({ ...formData, durasi_menit: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-900 dark:text-slate-100" />
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Harga Jasa/Pcs (IDR)</label>
+                  <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Harga Jasa/Pcs (IDR)</label>
                   <div className="relative">
-                    <div className="absolute left-4 top-4.5 text-slate-400 font-bold text-sm">Rp</div>
-                    <input type="number" value={formData.harga_per_unit} onChange={e => setFormData({ ...formData, harga_per_unit: e.target.value })} className="w-full pl-11 p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 font-black text-slate-800" />
+                    <div className="absolute left-4 top-4.5 text-slate-400 dark:text-slate-500 font-bold text-sm">Rp</div>
+                    <input type="number" value={formData.harga_per_unit} onChange={e => setFormData({ ...formData, harga_per_unit: e.target.value })} className="w-full pl-12 p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 font-black text-slate-800 dark:text-slate-100" />
                   </div>
                 </div>
                 <div className="pt-6">
-                  <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white font-black py-5 rounded-2xl transition-all transform hover:-translate-y-1 flex items-center justify-center gap-3 shadow-2xl shadow-slate-200">
-                    <Save size={22} /> Simpan ke Database
+                  <button type="submit" className="w-full bg-slate-900 dark:bg-yellow-500 hover:bg-black dark:hover:bg-yellow-400 text-white dark:text-slate-900 font-black py-5 rounded-2xl transition-all shadow-xl dark:shadow-none flex items-center justify-center gap-3 active:scale-95 uppercase tracking-widest text-sm">
+                    <Save size={20} className={isDark ? "" : "text-yellow-400"} /> Simpan Data
                   </button>
                 </div>
               </div>
             </form>
           </div>
         ) : (
-          <div className="bg-white rounded-[2rem] shadow-xl border border-slate-100 overflow-hidden">
-            <div className="p-8 border-b border-slate-50 bg-slate-50/30 flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-800">📜 Log Produksi</h2>
-              <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden relative transition-colors">
+            <div className="absolute top-0 left-0 w-full h-2 bg-slate-800 dark:bg-slate-700"></div>
+            <div className="p-8 border-b border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-800/20 flex items-center justify-between mt-2">
+              <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">📜 Log Produksi</h2>
+              <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md dark:shadow-none">
                 <Download size={16} /> Export CSV
               </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
-                  <tr className="bg-slate-50/50 text-slate-400 text-[10px] uppercase tracking-[0.2em] font-black">
-                    <th className="px-8 py-5">Job Info</th>
-                    <th className="px-8 py-5">Detail Klien</th>
+                  <tr className="bg-slate-50/50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 text-[10px] uppercase tracking-[0.2em] font-black border-b border-slate-100 dark:border-slate-800">
+                    <th className="px-8 py-5">Info Job</th>
+                    <th className="px-8 py-5">Klien & Deskripsi</th>
                     <th className="px-8 py-5 text-center">Volume</th>
                     <th className="px-8 py-5 text-right">Total IDR</th>
                     <th className="px-8 py-5 text-center">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                   {loading ? (
-                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 text-sm italic font-medium">Menghubungkan ke server...</td></tr>
+                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 dark:text-slate-500 text-sm italic font-medium tracking-widest">Menghubungkan ke server cloud...</td></tr>
                   ) : jobs.length === 0 ? (
-                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 text-sm">Belum ada data produksi.</td></tr>
+                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 dark:text-slate-500 text-sm">Belum ada data produksi yang tersimpan.</td></tr>
                   ) : (
                     jobs.map((job) => (
-                      <tr key={job.id} className="hover:bg-slate-50/40 transition-colors group">
+                      <tr key={job.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                         <td className="px-8 py-6">
-                          <p className="text-sm font-black text-slate-800">{job.tanggal}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Op: {job.operator}</p>
+                          <p className="font-black text-slate-800 dark:text-slate-200 text-sm">{job.tanggal}</p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-tight mt-0.5">Op: {job.operator}</p>
                         </td>
                         <td className="px-8 py-6">
-                          <p className="text-[10px] text-blue-600 font-black uppercase mb-1 tracking-wider">{job.customer || 'Pelanggan Umum'}</p>
-                          <p className="text-xs text-slate-500 italic leading-relaxed">"{job.deskripsi}"</p>
+                          <p className="text-[10px] text-blue-600 dark:text-blue-400 font-black uppercase mb-1 tracking-wider">{job.customer || 'Pelanggan Umum'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 italic leading-relaxed">"{job.deskripsi}"</p>
                         </td>
                         <td className="px-8 py-6 text-center">
-                          <div className="bg-slate-100 inline-block px-3 py-1 rounded-lg">
-                            <span className="text-xs font-black text-slate-700">{job.jumlah_unit} <span className="text-[9px] font-normal text-slate-400">Pcs</span></span>
+                          <div className="bg-slate-100 dark:bg-slate-800 inline-block px-3 py-1.5 rounded-lg">
+                            <span className="text-xs font-black text-slate-700 dark:text-slate-300">{job.jumlah_unit} <span className="text-[9px] font-normal text-slate-400 dark:text-slate-500">Pcs</span></span>
                           </div>
-                          <p className="text-[9px] text-slate-400 mt-1.5 font-bold uppercase tracking-tighter">@{job.durasi_menit}m/pcs</p>
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 font-bold uppercase tracking-tighter">@{job.durasi_menit}m/pcs</p>
                         </td>
-                        <td className="px-8 py-6 text-right">
-                          <p className="text-sm font-black text-slate-900">{(job.total_penghasilan || 0).toLocaleString()}</p>
-                          <p className="text-[9px] text-slate-400 font-bold tracking-tighter">@ {job.harga_per_unit.toLocaleString()}</p>
-                        </td>
+                        <td className="px-8 py-6 text-right font-black text-sm text-slate-900 dark:text-slate-200">{(job.total_penghasilan || 0).toLocaleString()}</td>
                         <td className="px-8 py-6 text-center">
-                          <div className="flex justify-center gap-2">
+                          <div className="flex justify-center gap-3">
                             {isAdmin ? (
                               <>
-                                <button
-                                  onClick={() => setEditingJob(job)}
-                                  className="p-2 text-blue-400 hover:text-blue-600 transition-all hover:scale-110"
-                                  title="Edit"
-                                >
-                                  <Edit3 size={18} />
-                                </button>
-                                <button
-                                  onClick={() => deleteJob(job.id)}
-                                  className="p-2 text-red-300 hover:text-red-500 transition-all hover:scale-110"
-                                  title="Hapus"
-                                >
-                                  <Trash2 size={18} />
-                                </button>
+                                <button onClick={() => setEditingJob(job)} className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all hover:scale-110"><Edit3 size={18} /></button>
+                                <button onClick={() => deleteJob(job.id)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-all hover:scale-110"><Trash2 size={18} /></button>
                               </>
-                            ) : (
-                              <Lock size={16} className="text-slate-200" />
-                            )}
+                            ) : <Lock size={16} className="text-slate-200 dark:text-slate-700" title="Locked" />}
                           </div>
                         </td>
                       </tr>
@@ -432,92 +403,51 @@ const App = () => {
         )}
       </div>
 
-      {/* --- MODAL LOGIN ADMIN --- */}
+      {/* Modal Admin Password */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400"></div>
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl relative overflow-hidden transition-colors">
+            <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400 dark:bg-yellow-500"></div>
             <div className="flex justify-between items-center mb-8">
-              <h3 className="text-2xl font-black text-slate-800">Admin Login</h3>
-              <button onClick={() => { setShowLoginModal(false); setLoginError(""); }} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+              <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">Admin Akses</h3>
+              <button onClick={() => { setShowLoginModal(false); setLoginError(""); }} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"><X size={24} /></button>
             </div>
-            <p className="text-xs text-slate-400 mb-8 font-medium leading-relaxed">Masukkan password owner untuk membuka akses modifikasi data produksi.</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-8 font-medium leading-relaxed uppercase tracking-widest text-center">Password Khusus Owner</p>
             <form onSubmit={handleAdminLogin}>
-              <div className="relative mb-4">
-                <input
-                  type="password"
-                  autoFocus
-                  value={passInput}
-                  onChange={(e) => { setPassInput(e.target.value); if (loginError) setLoginError(""); }}
-                  placeholder="Password"
-                  className={`w-full p-5 bg-slate-50 rounded-2xl border-2 outline-none transition-all text-center font-black tracking-widest text-lg ${loginError ? 'border-red-400' : 'border-transparent focus:border-yellow-400'}`}
-                />
-              </div>
-
-              {loginError && (
-                <div className="flex items-center gap-2 text-red-500 text-[10px] font-bold mb-6 justify-center animate-pulse">
-                  <AlertCircle size={14} /> {loginError}
-                </div>
-              )}
-
-              <button type="submit" className="w-full bg-slate-900 hover:bg-black text-white font-black py-5 rounded-2xl shadow-xl shadow-slate-200 transition-all active:scale-95">
-                Unlock System
-              </button>
+              <input type="password" autoFocus value={passInput} onChange={(e) => { setPassInput(e.target.value); setLoginError(""); }} placeholder="******" className="w-full p-5 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all mb-4 text-center font-black text-lg tracking-widest text-slate-800 dark:text-white" />
+              {loginError && <p className="text-red-500 text-[10px] font-bold text-center mb-4 uppercase tracking-wider">{loginError}</p>}
+              <button type="submit" className="w-full bg-slate-900 dark:bg-yellow-500 text-white dark:text-slate-900 font-black py-5 rounded-2xl shadow-xl dark:shadow-none transition-all active:scale-95 uppercase tracking-widest text-sm">Unlock System</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* --- MODAL EDIT JOB --- */}
+      {/* Modal Edit Data */}
       {editingJob && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl my-8 relative">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-2xl w-full shadow-2xl my-8 relative transition-colors">
             <div className="absolute top-0 left-0 w-full h-2 bg-blue-500"></div>
-            <div className="flex justify-between items-center mb-10">
-              <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">🛠️ Revisi Produksi</h3>
-              <button onClick={() => setEditingJob(null)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+            <div className="flex justify-between items-center mb-10 mt-2">
+              <h3 className="text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tighter">🛠️ Revisi Produksi</h3>
+              <button onClick={() => setEditingJob(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"><X size={24} /></button>
             </div>
             <form onSubmit={handleUpdateJob} className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Tanggal</label>
-                  <input type="date" value={editingJob.tanggal} onChange={(e) => setEditingJob({ ...editingJob, tanggal: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Operator</label>
-                  <input type="text" value={editingJob.operator} onChange={(e) => setEditingJob({ ...editingJob, operator: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Invoice</label>
-                  <input type="text" value={editingJob.invoice_code} onChange={(e) => setEditingJob({ ...editingJob, invoice_code: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Customer</label>
-                  <input type="text" value={editingJob.customer} onChange={(e) => setEditingJob({ ...editingJob, customer: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Tanggal</span><input type="date" value={editingJob.tanggal} onChange={(e) => setEditingJob({ ...editingJob, tanggal: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold color-scheme-light dark:color-scheme-dark" /></label>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Operator</span><input type="text" value={editingJob.operator} onChange={(e) => setEditingJob({ ...editingJob, operator: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" /></label>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Invoice</span><input type="text" value={editingJob.invoice_code} onChange={(e) => setEditingJob({ ...editingJob, invoice_code: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" /></label>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Customer</span><input type="text" value={editingJob.customer} onChange={(e) => setEditingJob({ ...editingJob, customer: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" /></label>
               </div>
               <div className="space-y-6">
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Deskripsi</label>
-                  <input type="text" value={editingJob.deskripsi} onChange={(e) => setEditingJob({ ...editingJob, deskripsi: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" />
-                </div>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Deskripsi</span><input type="text" value={editingJob.deskripsi} onChange={(e) => setEditingJob({ ...editingJob, deskripsi: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400" /></label>
                 <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Volume</label>
-                    <input type="number" value={editingJob.jumlah_unit} onChange={(e) => setEditingJob({ ...editingJob, jumlah_unit: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Durasi per Pcs (m)</label>
-                    <input type="number" value={editingJob.durasi_menit} onChange={(e) => setEditingJob({ ...editingJob, durasi_menit: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" />
-                  </div>
+                  <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Volume</span><input type="number" value={editingJob.jumlah_unit} onChange={(e) => setEditingJob({ ...editingJob, jumlah_unit: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" /></label>
+                  <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Durasi (m)</span><input type="number" value={editingJob.durasi_menit} onChange={(e) => setEditingJob({ ...editingJob, durasi_menit: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-bold" /></label>
                 </div>
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Harga Jasa</label>
-                  <input type="number" value={editingJob.harga_per_unit} onChange={(e) => setEditingJob({ ...editingJob, harga_per_unit: e.target.value })} className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-black" />
-                </div>
+                <label className="block"><span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block mb-2">Harga/Unit</span><input type="number" value={editingJob.harga_per_unit} onChange={(e) => setEditingJob({ ...editingJob, harga_per_unit: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-400 font-black text-slate-800 dark:text-slate-200" /></label>
                 <div className="pt-6 flex gap-4">
-                  <button type="button" onClick={() => setEditingJob(null)} className="flex-1 bg-slate-100 text-slate-600 font-bold py-5 rounded-2xl hover:bg-slate-200 transition-all uppercase text-[10px] tracking-widest">Batal</button>
-                  <button type="submit" className="flex-1 bg-blue-600 text-white font-black py-5 rounded-2xl flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-xl shadow-blue-100"><Check size={20} /> Update</button>
+                  <button type="button" onClick={() => setEditingJob(null)} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold py-5 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all uppercase text-[10px] tracking-widest font-black">Batal</button>
+                  <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 dark:shadow-none transition-all flex items-center justify-center gap-2 active:scale-95 uppercase text-[10px] tracking-widest"><Check size={18} /> Update</button>
                 </div>
               </div>
             </form>
@@ -525,8 +455,9 @@ const App = () => {
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto mt-12 text-center text-slate-300 text-[9px] font-black uppercase tracking-[0.5em] opacity-50">
-        CG Digital Print Karawang • Cloud Control Hub
+      {/* Footer System */}
+      <div className="max-w-6xl mx-auto mt-12 text-center text-slate-400 dark:text-slate-500 text-[9px] font-black uppercase tracking-[0.5em] opacity-50 pb-10 transition-colors">
+        CG Digital Print Karawang • Production System Pro v1.6
       </div>
     </div>
   );
