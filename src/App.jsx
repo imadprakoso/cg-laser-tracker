@@ -299,7 +299,7 @@ const App = () => {
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Nama Operator</label>
-                  <input type="text" required placeholder="Contoh: Budi" value={formData.operator} onChange={e => setFormData({ ...formData, operator: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
+                  <input type="text" required placeholder="Contoh: Angga" value={formData.operator} onChange={e => setFormData({ ...formData, operator: e.target.value })} className="w-full p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border-none outline-none focus:ring-2 focus:ring-yellow-400 transition-all font-bold text-slate-900 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600" />
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Invoice Code</label>
