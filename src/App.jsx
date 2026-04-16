@@ -252,9 +252,9 @@ const App = () => {
         <div>
           <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3 transition-colors duration-300">
             <span className="bg-yellow-400 dark:bg-yellow-500 p-2.5 rounded-2xl text-white dark:text-slate-900 shadow-lg shadow-yellow-200 dark:shadow-none">⚡</span>
-            CG Digital Print
+            CG
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium transition-colors">Monitoring Fiber Laser — Karawang Warehouse</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium transition-colors">Monitoring Fiber Laser</p>
         </div>
 
         <div className="flex items-center gap-3">
