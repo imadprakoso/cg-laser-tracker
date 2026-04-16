@@ -1,31 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import {
-  PlusCircle,
-  History,
-  Save,
-  Trash2,
-  Edit3,
-  Download,
-  Clock,
-  User,
-  Hash,
-  Package,
-  DollarSign,
-  AlertCircle,
-  Lock,
-  Unlock,
-  X,
-  Check,
-  Bell,
-  Sun,
-  Moon
+  PlusCircle, History, Save, Trash2, Edit3, Download,
+  Clock, User, Hash, Package, DollarSign, Lock, Unlock,
+  X, Check, Bell, Sun, Moon, UploadCloud
 } from 'lucide-react';
 
+// --- FIREBASE IMPORTS ---
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+
 /**
- * --- KONFIGURASI DATABASE ---
+ * --- KONFIGURASI FIREBASE MILIKMU ---
+ * Cek override bawaan sistem dihapus total agar selalu terkoneksi 
+ * 100% ke database cg-laser-tracker milikmu.
  */
-const supabaseUrl = "https://mqtjbesctzixdnwnqctt.supabase.co";
-const supabaseKey = "sb_publishable_y9VJKwDA_FKBCK9W84b9rg_FAZW3JrM";
+const firebaseConfig = {
+  apiKey: "AIzaSyDmATeZFwmwSPBoOvZAm4-YAVXZQ2fb9A4",
+  authDomain: "cg-laser-tracker.firebaseapp.com",
+  projectId: "cg-laser-tracker",
+  storageBucket: "cg-laser-tracker.firebasestorage.app",
+  messagingSenderId: "298068953473",
+  appId: "1:298068953473:web:f9e798be563c7030e34080",
+  measurementId: "G-QT3CC4CCY3"
+};
+
+// Inisialisasi Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 const ADMIN_PASSWORD = "cg";
 
 const App = () => {
@@ -40,26 +42,7 @@ const App = () => {
   const [loginError, setLoginError] = useState("");
   const [notification, setNotification] = useState({ show: false, message: '', type: 'info' });
   const [editingJob, setEditingJob] = useState(null);
-
-  // --- STATE DARK MODE ---
-  const [isDark, setIsDark] = useState(() => {
-    // Cek apakah sebelumnya user milih dark mode (disimpan di browser)
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('theme') === 'dark';
-    }
-    return false;
-  });
-
-  // Efek untuk mengganti class di body HTML saat Dark Mode di-klik
-  useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDark]);
+  const [jobToDelete, setJobToDelete] = useState(null);
 
   // State Form Input
   const [formData, setFormData] = useState({
@@ -73,11 +56,28 @@ const App = () => {
     durasi_menit: 10
   });
 
+  // Mode Gelap
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('theme') === 'dark';
+    return false;
+  });
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDark]);
+
   const notify = (message, type = 'info') => {
     setNotification({ show: true, message, type });
     setTimeout(() => setNotification({ show: false, message: '', type: 'info' }), 3000);
   };
 
+  // Logika Harga
   useEffect(() => {
     const qty = parseInt(formData.jumlah_unit) || 0;
     let price = 50000;
@@ -86,24 +86,25 @@ const App = () => {
     setFormData(prev => ({ ...prev, harga_per_unit: price }));
   }, [formData.jumlah_unit]);
 
-  const fetchJobs = async () => {
-    if (!supabaseUrl || !supabaseKey) return;
+  // --- FIREBASE: FETCH DATA REAL-TIME ---
+  useEffect(() => {
     setLoading(true);
-    try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?select=*&order=tanggal.desc`, {
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-      });
-      if (!response.ok) throw new Error('Gagal mengambil data dari server');
-      const data = await response.json();
-      setJobs(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  useEffect(() => { fetchJobs(); }, []);
+    // Langsung akses koleksi laser_jobs tanpa proteksi tambahan
+    const unsubscribe = onSnapshot(collection(db, 'laser_jobs'), (snapshot) => {
+      const data = snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+      // Sortir data terbaru di atas
+      data.sort((a, b) => new Date(b.tanggal) - new Date(a.tanggal));
+      setJobs(data);
+      setLoading(false);
+    }, (error) => {
+      console.error("Error fetching data: ", error);
+      setLoading(false);
+      notify("Gagal mengambil data: " + error.message, 'error');
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const handleAdminLogin = (e) => {
     e.preventDefault();
@@ -118,63 +119,103 @@ const App = () => {
     }
   };
 
+  // --- FIREBASE: SIMPAN DATA BARU ---
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     const total = formData.jumlah_unit * formData.harga_per_unit;
-    const payload = { ...formData, total_penghasilan: total };
+    const payload = { ...formData, total_penghasilan: total, created_at: new Date().toISOString() };
 
     try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs`, {
-        method: 'POST',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) throw new Error('Gagal menyimpan data');
+      await addDoc(collection(db, 'laser_jobs'), payload);
       notify('Job berhasil disimpan ke Cloud!', 'success');
       setFormData({ ...formData, invoice_code: '', customer: '', deskripsi: '', jumlah_unit: 1 });
-      fetchJobs();
     } catch (err) {
       notify('Gagal simpan: ' + err.message, 'error');
     }
   };
 
+  // --- FIREBASE: UPDATE DATA ---
   const handleUpdateJob = async (e) => {
     e.preventDefault();
     if (!editingJob || !isAdmin) return;
 
     const total = editingJob.jumlah_unit * editingJob.harga_per_unit;
     const payload = { ...editingJob, total_penghasilan: total };
-    delete payload.id; delete payload.created_at;
+    const jobId = payload.id;
+    delete payload.id;
 
     try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?id=eq.${editingJob.id}`, {
-        method: 'PATCH',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) throw new Error('Gagal update data');
+      await updateDoc(doc(db, 'laser_jobs', jobId), payload);
       notify('Data berhasil diperbarui!', 'success');
       setEditingJob(null);
-      fetchJobs();
     } catch (err) {
       notify('Gagal update: ' + err.message, 'error');
     }
   };
 
-  const deleteJob = async (id) => {
-    if (!isAdmin) return;
-    if (!window.confirm('Hapus permanen data ini?')) return;
+  // --- FIREBASE: HAPUS DATA ---
+  const confirmDelete = async () => {
+    if (!isAdmin || !jobToDelete) return;
     try {
-      const response = await fetch(`${supabaseUrl}/rest/v1/laser_jobs?id=eq.${id}`, {
-        method: 'DELETE',
-        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
-      });
-      if (!response.ok) throw new Error('Gagal menghapus data');
+      await deleteDoc(doc(db, 'laser_jobs', jobToDelete));
       notify('Data dihapus', 'success');
-      fetchJobs();
+      setJobToDelete(null);
     } catch (err) {
       notify('Gagal hapus: ' + err.message, 'error');
     }
+  };
+
+  // --- FITUR MIGRASI: IMPORT CSV KE FIREBASE ---
+  const handleCSVImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target.result;
+      const lines = text.split(/\r?\n/);
+      const delimiter = text.indexOf(';') > -1 ? ';' : ',';
+
+      let count = 0;
+      let lastError = '';
+
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+
+        const values = lines[i].split(delimiter);
+
+        if (values.length >= 9) {
+          const payload = {
+            tanggal: values[0].trim(),
+            operator: values[1].trim(),
+            invoice_code: values[2].trim(),
+            customer: values[3].trim(),
+            deskripsi: values[4].trim(),
+            jumlah_unit: parseInt(values[5]) || 0,
+            harga_per_unit: parseInt(values[6]) || 0,
+            durasi_menit: parseInt(values[7]) || 0,
+            total_penghasilan: parseInt(values[8]) || 0,
+            created_at: new Date().toISOString()
+          };
+          try {
+            await addDoc(collection(db, 'laser_jobs'), payload);
+            count++;
+          } catch (err) {
+            console.error("Gagal import baris", i, err);
+            lastError = err.message;
+          }
+        }
+      }
+
+      if (count > 0) {
+        notify(`${count} data berhasil dimigrasi!`, 'success');
+      } else {
+        notify(`Gagal migrasi: ${lastError || 'Format CSV tidak cocok'}`, 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = null;
   };
 
   const exportCSV = () => {
@@ -200,30 +241,26 @@ const App = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans p-4 md:p-8 pb-20 transition-colors duration-300">
 
-      {/* Toast Notifikasi */}
       {notification.show && (
-        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl bg-slate-800 dark:bg-slate-100 text-white dark:text-slate-900 animate-bounce`}>
-          <Bell size={20} className={isDark ? "text-yellow-600" : "text-yellow-400"} />
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl ${notification.type === 'error' ? 'bg-red-600' : 'bg-slate-800 dark:bg-slate-100'} text-white dark:text-slate-900 animate-bounce`}>
+          <Bell size={20} className={notification.type === 'error' ? 'text-white' : (isDark ? "text-yellow-600" : "text-yellow-400")} />
           <span className="font-bold text-sm tracking-wide">{notification.message}</span>
         </div>
       )}
 
-      {/* Bagian Header */}
       <div className="max-w-6xl mx-auto mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-800 dark:text-white flex items-center gap-3 transition-colors duration-300">
             <span className="bg-yellow-400 dark:bg-yellow-500 p-2.5 rounded-2xl text-white dark:text-slate-900 shadow-lg shadow-yellow-200 dark:shadow-none">⚡</span>
-            CG
+            CG Digital Print
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium transition-colors">Monitoring Fiber Laser</p>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium transition-colors">Monitoring Fiber Laser — Karawang Warehouse</p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Tombol Toggle Dark Mode */}
           <button
             onClick={() => setIsDark(!isDark)}
             className="p-3 rounded-2xl flex items-center justify-center font-bold transition-all shadow-sm border bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700"
-            title="Toggle Tema"
           >
             {isDark ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
           </button>
@@ -244,7 +281,7 @@ const App = () => {
               <PlusCircle size={18} /> <span className="hidden sm:block">Input</span>
             </button>
             <button
-              onClick={() => { setActiveTab('report'); fetchJobs(); }}
+              onClick={() => setActiveTab('report')}
               className={`px-6 py-2.5 rounded-xl flex items-center gap-2 font-bold transition-all ${activeTab === 'report' ? 'bg-slate-800 dark:bg-slate-700 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
             >
               <History size={18} /> <span className="hidden sm:block">Riwayat</span>
@@ -254,7 +291,6 @@ const App = () => {
       </div>
 
       <div className="max-w-6xl mx-auto">
-        {/* Widget Ringkasan */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white dark:bg-slate-900 p-7 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-5 hover:shadow-md transition-all">
             <div className="p-4 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl text-emerald-600 dark:text-emerald-400"><DollarSign size={28} /></div>
@@ -279,7 +315,6 @@ const App = () => {
           </div>
         </div>
 
-        {/* Konten Utama */}
         {activeTab === 'input' ? (
           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden relative transition-colors">
             <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400 dark:bg-yellow-500"></div>
@@ -343,11 +378,19 @@ const App = () => {
         ) : (
           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden relative transition-colors">
             <div className="absolute top-0 left-0 w-full h-2 bg-slate-800 dark:bg-slate-700"></div>
-            <div className="p-8 border-b border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-800/20 flex items-center justify-between mt-2">
+            <div className="p-8 border-b border-slate-50 dark:border-slate-800/50 bg-slate-50/30 dark:bg-slate-800/20 flex flex-col sm:flex-row items-center justify-between gap-4 mt-2">
               <h2 className="text-xl font-black text-slate-800 dark:text-white uppercase tracking-tight">📜 Log Produksi</h2>
-              <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md dark:shadow-none">
-                <Download size={16} /> Export CSV
-              </button>
+              <div className="flex gap-3">
+                {isAdmin && (
+                  <label className="px-4 py-2.5 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/30 dark:hover:bg-blue-800/50 text-blue-700 dark:text-blue-400 rounded-xl text-xs font-black flex items-center gap-2 cursor-pointer transition-all">
+                    <UploadCloud size={16} /> Import CSV Migrasi
+                    <input type="file" accept=".csv" className="hidden" onChange={handleCSVImport} />
+                  </label>
+                )}
+                <button onClick={exportCSV} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md dark:shadow-none">
+                  <Download size={16} /> Export CSV
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -362,7 +405,7 @@ const App = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                   {loading ? (
-                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 dark:text-slate-500 text-sm italic font-medium tracking-widest">Menghubungkan ke server cloud...</td></tr>
+                    <tr><td colSpan="5" className="p-16 text-center text-slate-400 dark:text-slate-500 text-sm italic font-medium tracking-widest">Menghubungkan ke server Firebase...</td></tr>
                   ) : jobs.length === 0 ? (
                     <tr><td colSpan="5" className="p-16 text-center text-slate-400 dark:text-slate-500 text-sm">Belum ada data produksi yang tersimpan.</td></tr>
                   ) : (
@@ -388,7 +431,7 @@ const App = () => {
                             {isAdmin ? (
                               <>
                                 <button onClick={() => setEditingJob(job)} className="text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-all hover:scale-110"><Edit3 size={18} /></button>
-                                <button onClick={() => deleteJob(job.id)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-all hover:scale-110"><Trash2 size={18} /></button>
+                                <button onClick={() => setJobToDelete(job.id)} className="text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-all hover:scale-110"><Trash2 size={18} /></button>
                               </>
                             ) : <Lock size={16} className="text-slate-200 dark:text-slate-700" title="Locked" />}
                           </div>
@@ -455,9 +498,31 @@ const App = () => {
         </div>
       )}
 
-      {/* Footer System */}
+      {/* Modal Konfirmasi Hapus */}
+      {jobToDelete && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-10 max-w-sm w-full shadow-2xl relative overflow-hidden transition-colors">
+            <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tighter">Hapus Data?</h3>
+              <button onClick={() => setJobToDelete(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"><X size={24} /></button>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
+              Apakah kamu yakin ingin menghapus data produksi ini secara permanen? Data tidak dapat dikembalikan.
+            </p>
+            <div className="flex gap-4">
+              <button onClick={() => setJobToDelete(null)} className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold py-4 rounded-2xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all uppercase text-[10px] tracking-widest">Batal</button>
+              <button onClick={confirmDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black py-4 rounded-2xl shadow-xl shadow-red-100 dark:shadow-none transition-all active:scale-95 uppercase text-[10px] tracking-widest flex items-center justify-center gap-2">
+                <Trash2 size={16} /> Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
       <div className="max-w-6xl mx-auto mt-12 text-center text-slate-400 dark:text-slate-500 text-[9px] font-black uppercase tracking-[0.5em] opacity-50 pb-10 transition-colors">
-        CG Digital Print Karawang • Production System Pro v1.6
+        CG Digital Print Karawang • Firebase Production System v2.0
       </div>
     </div>
   );
